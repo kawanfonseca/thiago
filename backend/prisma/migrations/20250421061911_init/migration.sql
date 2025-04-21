@@ -1,0 +1,40 @@
+-- CreateTable
+CREATE TABLE "SpedFile" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "filename" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "Record" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "type" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "spedFileId" INTEGER NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Record_spedFileId_fkey" FOREIGN KEY ("spedFileId") REFERENCES "SpedFile" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "FuelType" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "anpCode" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "icmsRate" REAL NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "PmpfValue" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "fuelTypeId" INTEGER NOT NULL,
+    "value" REAL NOT NULL,
+    "startDate" DATETIME NOT NULL,
+    "endDate" DATETIME NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "PmpfValue_fuelTypeId_fkey" FOREIGN KEY ("fuelTypeId") REFERENCES "FuelType" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "FuelType_anpCode_key" ON "FuelType"("anpCode");

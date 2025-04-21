@@ -1,0 +1,17 @@
+{
+  "name": "icms-st-combustiveis",
+  "version": "1.0.0",
+  "description": "Sistema para processamento de arquivos SPED e cálculo de restituição de ICMS-ST para combustíveis",
+  "scripts": {
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm start",
+    "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "seed": "cd backend && node scripts/seedFuelTypes.js"
+  },
+  "author": "Thiago",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

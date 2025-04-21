@@ -1,0 +1,44 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model SpedFile {
+  id        Int      @id @default(autoincrement())
+  filename  String
+  content   String
+  createdAt DateTime @default(now())
+  records   Record[]
+}
+
+model Record {
+  id        Int      @id @default(autoincrement())
+  type      String
+  content   String
+  spedFile  SpedFile @relation(fields: [spedFileId], references: [id])
+  spedFileId Int
+  createdAt DateTime @default(now())
+}
+
+model FuelType {
+  id        Int      @id @default(autoincrement())
+  anpCode   String   @unique
+  name      String
+  icmsRate  Float
+  createdAt DateTime @default(now())
+  pmpfValues PmpfValue[]
+}
+
+model PmpfValue {
+  id        Int      @id @default(autoincrement())
+  fuelType  FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId Int
+  value     Float
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime @default(now())
+} 
