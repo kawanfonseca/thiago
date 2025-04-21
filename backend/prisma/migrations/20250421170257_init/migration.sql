@@ -3,6 +3,8 @@ CREATE TABLE "SpedFile" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "filename" TEXT NOT NULL,
     "content" TEXT NOT NULL,
+    "startDate" DATETIME NOT NULL,
+    "endDate" DATETIME NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -34,6 +36,35 @@ CREATE TABLE "PmpfValue" (
     "endDate" DATETIME NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "PmpfValue_fuelTypeId_fkey" FOREIGN KEY ("fuelTypeId") REFERENCES "FuelType" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Sale" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "date" DATETIME NOT NULL,
+    "quantity" REAL NOT NULL,
+    "unitPrice" REAL NOT NULL,
+    "totalValue" REAL NOT NULL,
+    "fuelTypeId" INTEGER NOT NULL,
+    "spedFileId" INTEGER NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Sale_fuelTypeId_fkey" FOREIGN KEY ("fuelTypeId") REFERENCES "FuelType" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "Sale_spedFileId_fkey" FOREIGN KEY ("spedFileId") REFERENCES "SpedFile" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Purchase" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "date" DATETIME NOT NULL,
+    "quantity" REAL NOT NULL,
+    "unitPrice" REAL NOT NULL,
+    "totalValue" REAL NOT NULL,
+    "nfKey" TEXT NOT NULL,
+    "fuelTypeId" INTEGER NOT NULL,
+    "spedFileId" INTEGER NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Purchase_fuelTypeId_fkey" FOREIGN KEY ("fuelTypeId") REFERENCES "FuelType" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "Purchase_spedFileId_fkey" FOREIGN KEY ("spedFileId") REFERENCES "SpedFile" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateIndex

@@ -3,202 +3,336 @@ import {
   Box,
   Button,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  TextField,
-  Typography,
+  DialogContent,
+  DialogTitle,
   Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
-  TableRow
+  TableRow,
+  TextField,
+  Typography,
+  Alert,
+  CircularProgress,
+  MenuItem
 } from '@mui/material';
-import { Add as AddIcon } from '@mui/icons-material';
+import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import axios from 'axios';
-import { FuelType, PmpfValue } from '../types';
+
+interface FuelType {
+  id: number;
+  name: string;
+  anpCode: string;
+}
+
+interface PmpfValue {
+  id: number;
+  fuelTypeId: number;
+  value: number;
+  startDate: string;
+  endDate: string;
+  fuelType: FuelType;
+}
+
+interface FormData {
+  fuelTypeId: string;
+  value: string;
+  startDate: string;
+  endDate: string;
+}
 
 const API_URL = 'http://localhost:3001/api';
 
 const PmpfManager: React.FC = () => {
-  const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
   const [pmpfValues, setPmpfValues] = useState<PmpfValue[]>([]);
-  const [openDialog, setOpenDialog] = useState(false);
-  const [selectedFuelType, setSelectedFuelType] = useState<number>(0);
-  const [pmpfValue, setPmpfValue] = useState<string>('');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [editingPmpfValue, setEditingPmpfValue] = useState<PmpfValue | null>(null);
+  const [formData, setFormData] = useState<FormData>({
+    fuelTypeId: '',
+    value: '',
+    startDate: '',
+    endDate: ''
+  });
 
   useEffect(() => {
-    loadFuelTypes();
-    loadPmpfValues();
+    fetchPmpfValues();
+    fetchFuelTypes();
   }, []);
 
-  const loadFuelTypes = async () => {
+  const fetchPmpfValues = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API_URL}/pmpf-values`);
+      setPmpfValues(response.data);
+    } catch (err) {
+      setError('Erro ao carregar valores PMPF');
+      console.error('Erro:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchFuelTypes = async () => {
     try {
       const response = await axios.get(`${API_URL}/fuel-types`);
       setFuelTypes(response.data);
-    } catch (error) {
-      console.error('Erro ao carregar tipos de combustível:', error);
-      setError('Erro ao carregar tipos de combustível');
+    } catch (err) {
+      console.error('Erro ao carregar tipos de combustível:', err);
     }
   };
 
-  const loadPmpfValues = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/pmpf-values`);
-      setPmpfValues(response.data);
-    } catch (error) {
-      console.error('Erro ao carregar valores PMPF:', error);
-      setError('Erro ao carregar valores PMPF');
+  const handleOpenDialog = (pmpfValue?: PmpfValue) => {
+    if (pmpfValue) {
+      setEditingPmpfValue(pmpfValue);
+      setFormData({
+        fuelTypeId: pmpfValue.fuelTypeId.toString(),
+        value: pmpfValue.value.toString(),
+        startDate: pmpfValue.startDate.split('T')[0],
+        endDate: pmpfValue.endDate.split('T')[0]
+      });
+    } else {
+      setEditingPmpfValue(null);
+      setFormData({
+        fuelTypeId: '',
+        value: '',
+        startDate: '',
+        endDate: ''
+      });
     }
+    setOpenDialog(true);
   };
 
-  const handleSubmit = async () => {
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+    setEditingPmpfValue(null);
+    setFormData({
+      fuelTypeId: '',
+      value: '',
+      startDate: '',
+      endDate: ''
+    });
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      if (!selectedFuelType || !pmpfValue || !startDate || !endDate) {
-        setError('Todos os campos são obrigatórios');
-        return;
+      setLoading(true);
+      setError(null);
+      setSuccess(null);
+
+      const data = {
+        ...formData,
+        value: parseFloat(formData.value),
+        fuelTypeId: parseInt(formData.fuelTypeId)
+      };
+
+      if (editingPmpfValue) {
+        await axios.put(`${API_URL}/pmpf-values/${editingPmpfValue.id}`, data);
+        setSuccess('Valor PMPF atualizado com sucesso');
+      } else {
+        await axios.post(`${API_URL}/pmpf-values`, data);
+        setSuccess('Valor PMPF criado com sucesso');
       }
 
-      await axios.post(`${API_URL}/pmpf-values`, {
-        fuelTypeId: selectedFuelType,
-        value: parseFloat(pmpfValue),
-        startDate,
-        endDate
-      });
-
-      setOpenDialog(false);
-      clearForm();
-      loadPmpfValues();
-    } catch (error: any) {
-      console.error('Erro ao cadastrar valor PMPF:', error);
-      setError(error.response?.data?.error || 'Erro ao cadastrar valor PMPF');
+      handleCloseDialog();
+      fetchPmpfValues();
+    } catch (err) {
+      setError('Erro ao salvar valor PMPF');
+      console.error('Erro:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const clearForm = () => {
-    setSelectedFuelType(0);
-    setPmpfValue('');
-    setStartDate('');
-    setEndDate('');
-    setError(null);
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Tem certeza que deseja excluir este valor PMPF?')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      setSuccess(null);
+
+      await axios.delete(`${API_URL}/pmpf-values/${id}`);
+      setSuccess('Valor PMPF excluído com sucesso');
+      fetchPmpfValues();
+    } catch (err) {
+      setError('Erro ao excluir valor PMPF');
+      console.error('Erro:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleClose = () => {
-    setOpenDialog(false);
-    clearForm();
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('pt-BR');
   };
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h5">Gerenciamento de Valores PMPF</Typography>
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h5" component="h2">
+          Gerenciar Valores PMPF
+        </Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
-          onClick={() => setOpenDialog(true)}
+          onClick={() => handleOpenDialog()}
         >
-          Novo Valor PMPF
+          Novo Valor
         </Button>
       </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          {success}
+        </Alert>
+      )}
 
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Combustível</TableCell>
-              <TableCell>Valor PMPF</TableCell>
-              <TableCell>Início Vigência</TableCell>
-              <TableCell>Fim Vigência</TableCell>
+              <TableCell>Tipo de Combustível</TableCell>
+              <TableCell align="right">Valor (R$)</TableCell>
+              <TableCell>Data Inicial</TableCell>
+              <TableCell>Data Final</TableCell>
+              <TableCell align="right">Ações</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {pmpfValues.map((pmpf) => (
-              <TableRow key={pmpf.id}>
-                <TableCell>{pmpf.fuelType.name}</TableCell>
-                <TableCell>
-                  {pmpf.value.toLocaleString('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL'
-                  })}
-                </TableCell>
-                <TableCell>
-                  {new Date(pmpf.startDate).toLocaleDateString('pt-BR')}
-                </TableCell>
-                <TableCell>
-                  {new Date(pmpf.endDate).toLocaleDateString('pt-BR')}
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5} align="center">
+                  <CircularProgress />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : pmpfValues.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} align="center">
+                  Nenhum valor PMPF cadastrado
+                </TableCell>
+              </TableRow>
+            ) : (
+              pmpfValues.map((pmpfValue) => (
+                <TableRow key={pmpfValue.id}>
+                  <TableCell>{pmpfValue.fuelType.name}</TableCell>
+                  <TableCell align="right">
+                    {pmpfValue.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </TableCell>
+                  <TableCell>{formatDate(pmpfValue.startDate)}</TableCell>
+                  <TableCell>{formatDate(pmpfValue.endDate)}</TableCell>
+                  <TableCell align="right">
+                    <Button
+                      size="small"
+                      startIcon={<EditIcon />}
+                      onClick={() => handleOpenDialog(pmpfValue)}
+                      sx={{ mr: 1 }}
+                    >
+                      Editar
+                    </Button>
+                    <Button
+                      size="small"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleDelete(pmpfValue.id)}
+                    >
+                      Excluir
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </TableContainer>
 
-      <Dialog open={openDialog} onClose={handleClose}>
-        <DialogTitle>Novo Valor PMPF</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Tipo de Combustível</InputLabel>
-              <Select
-                value={selectedFuelType}
-                label="Tipo de Combustível"
-                onChange={(e) => setSelectedFuelType(Number(e.target.value))}
-              >
-                <MenuItem value={0}>Selecione...</MenuItem>
-                {fuelTypes.map((type) => (
-                  <MenuItem key={type.id} value={type.id}>
-                    {type.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
+      <Dialog open={openDialog} onClose={handleCloseDialog}>
+        <form onSubmit={handleSubmit}>
+          <DialogTitle>
+            {editingPmpfValue ? 'Editar Valor PMPF' : 'Novo Valor PMPF'}
+          </DialogTitle>
+          <DialogContent>
             <TextField
-              label="Valor PMPF"
+              select
+              autoFocus
+              margin="dense"
+              name="fuelTypeId"
+              label="Tipo de Combustível"
+              fullWidth
+              value={formData.fuelTypeId}
+              onChange={handleInputChange}
+              required
+            >
+              {fuelTypes.map((fuelType) => (
+                <MenuItem key={fuelType.id} value={fuelType.id}>
+                  {fuelType.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              margin="dense"
+              name="value"
+              label="Valor (R$)"
               type="number"
-              value={pmpfValue}
-              onChange={(e) => setPmpfValue(e.target.value)}
-              inputProps={{ step: '0.01' }}
+              fullWidth
+              value={formData.value}
+              onChange={handleInputChange}
+              required
+              inputProps={{ step: '0.01', min: '0' }}
             />
-
             <TextField
-              label="Início da Vigência"
+              margin="dense"
+              name="startDate"
+              label="Data Inicial"
               type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              fullWidth
+              value={formData.startDate}
+              onChange={handleInputChange}
+              required
               InputLabelProps={{ shrink: true }}
             />
-
             <TextField
-              label="Fim da Vigência"
+              margin="dense"
+              name="endDate"
+              label="Data Final"
               type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              fullWidth
+              value={formData.endDate}
+              onChange={handleInputChange}
+              required
               InputLabelProps={{ shrink: true }}
             />
-
-            {error && (
-              <Typography color="error" variant="body2">
-                {error}
-              </Typography>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            Salvar
-          </Button>
-        </DialogActions>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog}>Cancelar</Button>
+            <Button type="submit" variant="contained" disabled={loading}>
+              {loading ? <CircularProgress size={24} /> : 'Salvar'}
+            </Button>
+          </DialogActions>
+        </form>
       </Dialog>
     </Box>
   );

@@ -1,44 +1,90 @@
-datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
-}
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
 }
 
-model SpedFile {
-  id        Int      @id @default(autoincrement())
-  filename  String
-  content   String
-  createdAt DateTime @default(now())
-  records   Record[]
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
-model Record {
+model User {
   id        Int      @id @default(autoincrement())
-  type      String
-  content   String
-  spedFile  SpedFile @relation(fields: [spedFileId], references: [id])
-  spedFileId Int
+  username  String   @unique
+  password  String
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
 }
 
 model FuelType {
-  id        Int      @id @default(autoincrement())
-  anpCode   String   @unique
-  name      String
-  icmsRate  Float
-  createdAt DateTime @default(now())
-  pmpfValues PmpfValue[]
+  id          Int         @id @default(autoincrement())
+  name        String
+  anpCode     String      @unique
+  icmsRate    Float
+  pmpfValues  PmpfValue[]
+  sales       Sale[]
+  purchases   Purchase[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @default(now())
 }
 
 model PmpfValue {
-  id        Int      @id @default(autoincrement())
-  fuelType  FuelType @relation(fields: [fuelTypeId], references: [id])
-  fuelTypeId Int
-  value     Float
-  startDate DateTime
-  endDate   DateTime
-  createdAt DateTime @default(now())
+  id          Int       @id @default(autoincrement())
+  value       Float
+  startDate   DateTime
+  endDate     DateTime
+  fuelType    FuelType  @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId  Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now())
+}
+
+model SpedFile {
+  id        Int       @id @default(autoincrement())
+  filename  String
+  content   String
+  records   Record[]
+  sales     Sale[]
+  purchases Purchase[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now())
+}
+
+model Record {
+  id         Int       @id @default(autoincrement())
+  type       String
+  content    String
+  spedFile   SpedFile  @relation(fields: [spedFileId], references: [id])
+  spedFileId Int
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @default(now())
+}
+
+model Sale {
+  id          Int      @id @default(autoincrement())
+  date        DateTime
+  quantity    Float
+  unitPrice   Float
+  totalValue  Float
+  fuelType    FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId  Int
+  spedFile    SpedFile @relation(fields: [spedFileId], references: [id])
+  spedFileId  Int
+  createdAt   DateTime @default(now())
+}
+
+model Purchase {
+  id          Int      @id @default(autoincrement())
+  date        DateTime
+  quantity    Float
+  unitPrice   Float
+  totalValue  Float
+  nfKey       String
+  fuelType    FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId  Int
+  spedFile    SpedFile @relation(fields: [spedFileId], references: [id])
+  spedFileId  Int
+  createdAt   DateTime @default(now())
 } 

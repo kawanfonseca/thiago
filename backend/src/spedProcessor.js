@@ -23,192 +23,247 @@ const FUEL_TYPES = {
   '220101003': { name: 'GNV Comprimido', icmsRate: 0.17 }
 };
 
+// Valores PMPF de exemplo para 2017
+const PMPF_VALUES = {
+  '320102001': 4.33, // Gasolina C Comum
+  '320102002': 4.45, // Gasolina Aditivada
+  '820101034': 3.85, // Diesel S10
+  '810101001': 3.92, // Etanol
+  '220101005': 2.85  // Gás Natural Veicular
+};
+
 class SpedProcessor {
   constructor() {
-    this.currentFile = null;
-    this.fuelProducts = new Map();
-    this.processedRecords = {
-      total: 0,
-      ignored: 0,
-      processed: 0
-    };
+    this.initialDate = null;
+    this.finalDate = null;
+    this.totalValue = 0;
+    this.records = [];
+    this.productCodes = new Map();
+    this.currentDate = null;
+    this.currentProductCode = null;
   }
 
-  async processFile(content, filename) {
-    console.log(`Iniciando processamento do arquivo: ${filename}`);
-    
-    this.currentFile = await prisma.spedFile.create({
-      data: { filename, content }
-    });
-    console.log(`Arquivo salvo com ID: ${this.currentFile.id}`);
-
-    const lines = content.split('\n');
-    console.log(`Total de linhas no arquivo: ${lines.length}`);
-    
-    let currentProduct = null;
-    let productCount = 0;
-    let anpCount = 0;
-
-    for (const line of lines) {
-      const fields = line.split('|');
-      const recordType = fields[1];
-
-      if (recordType === '0200') {
-        currentProduct = { code: fields[2] };
-        productCount++;
-      }
-
-      if (recordType === '0206' && currentProduct) {
-        const anpCode = fields[2];
-        if (FUEL_TYPES[anpCode]) {
-          this.fuelProducts.set(currentProduct.code, anpCode);
-          anpCount++;
-          console.log(`Produto ${currentProduct.code} mapeado para ANP ${anpCode} (${FUEL_TYPES[anpCode].name})`);
+  async processFile(fileContent, fileName) {
+    try {
+      console.log('Iniciando processamento do arquivo SPED...');
+      
+      const lines = fileContent.split('\n');
+      console.log(`Total de linhas no arquivo: ${lines.length}`);
+      
+      // Primeiro passo: processar registros 0000 para obter o período
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        const record = this.parseLine(line);
+        if (!record) continue;
+        
+        if (record.type === '0000') {
+          await this.process0000(record);
+          break;
         }
       }
-
-      if (recordType === 'C425') {
-        this.processedRecords.total++;
-        await this.processC425Record(fields);
-      }
-    }
-
-    console.log(`
-      Resumo do processamento:
-      - Produtos encontrados: ${productCount}
-      - Códigos ANP válidos: ${anpCount}
-      - Registros C425 totais: ${this.processedRecords.total}
-      - Registros C425 ignorados: ${this.processedRecords.ignored}
-      - Registros C425 processados: ${this.processedRecords.processed}
-    `);
-
-    return await this.calculateRefund();
-  }
-
-  async processC425Record(fields) {
-    if (fields.length < 6) {
-      console.log(`Registro C425 ignorado: campos insuficientes`);
-      this.processedRecords.ignored++;
-      return;
-    }
-
-    const productCode = fields[2];
-    const fuelAnpCode = this.fuelProducts.get(productCode);
-    
-    if (!fuelAnpCode) {
-      console.log(`Registro C425 ignorado: produto ${productCode} sem código ANP`);
-      this.processedRecords.ignored++;
-      return;
-    }
-
-    if (!FUEL_TYPES[fuelAnpCode]) {
-      console.log(`Registro C425 ignorado: código ANP ${fuelAnpCode} não cadastrado`);
-      this.processedRecords.ignored++;
-      return;
-    }
-
-    const quantity = parseFloat(fields[3]);
-    const value = parseFloat(fields[5]);
-
-    if (isNaN(quantity) || isNaN(value) || quantity <= 0 || value <= 0) {
-      console.log(`Registro C425 ignorado: valores inválidos (quantidade: ${quantity}, valor: ${value})`);
-      this.processedRecords.ignored++;
-      return;
-    }
-
-    await this.saveRecord('C425', fields.join('|'));
-    this.processedRecords.processed++;
-  }
-
-  async saveRecord(type, content) {
-    return prisma.record.create({
-      data: {
-        type,
-        content,
-        spedFileId: this.currentFile.id
-      }
-    });
-  }
-
-  async calculateRefund() {
-    console.log('Iniciando cálculo de restituição...');
-    
-    const records = await prisma.record.findMany({
-      where: {
-        spedFileId: this.currentFile.id,
-        type: 'C425'
-      }
-    });
-
-    console.log(`Encontrados ${records.length} registros para cálculo`);
-
-    const results = [];
-    for (const record of records) {
-      const fields = record.content.split('|');
-      const productCode = fields[2];
-      const fuelAnpCode = this.fuelProducts.get(productCode);
       
-      if (!fuelAnpCode || !FUEL_TYPES[fuelAnpCode]) {
-        console.log(`Ignorando registro no cálculo: código ANP inválido para produto ${productCode}`);
-        continue;
+      // Segundo passo: processar registros 0200 e 0206 para mapear códigos de produtos
+      console.log('Processando registros 0200 e 0206...');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        const record = this.parseLine(line);
+        if (!record) continue;
+        
+        if (record.type === '0200' || record.type === '0206') {
+          await this.processProductCode(record);
+        }
       }
-
-      const quantity = parseFloat(fields[3]);
-      const value = parseFloat(fields[5]);
-
-      // Buscar o valor PMPF do banco de dados
-      const pmpfValue = await this.getPmpfValue(fuelAnpCode);
-      if (!pmpfValue) {
-        console.log(`Valor PMPF não encontrado para combustível ${FUEL_TYPES[fuelAnpCode].name}`);
-        continue;
+      
+      console.log(`Mapeamento de códigos de produtos: ${JSON.stringify(Array.from(this.productCodes.entries()))}`);
+      
+      // Terceiro passo: processar os registros C405 e C425
+      console.log('Processando registros C405 e C425...');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        const record = this.parseLine(line);
+        if (!record) continue;
+        
+        if (record.type === 'C405') {
+          await this.processC405(record);
+        } else if (record.type === 'C425') {
+          await this.processC425(record);
+        }
       }
+      
+      console.log(`Total de registros processados: ${this.records.length}`);
+      
+      await this.calculateRefunds();
+      
+      console.log('Processamento do arquivo SPED concluído com sucesso');
+      
+      // Formatar o resultado para o frontend
+      const formattedRecords = await this.formatRecords();
+      const totalRefund = formattedRecords.reduce((sum, record) => sum + record.refund, 0);
+      
+      return {
+        id: Date.now(),
+        fileName: fileName,
+        processedAt: new Date().toISOString(),
+        totalRefund: totalRefund,
+        details: formattedRecords
+      };
+    } catch (error) {
+      console.error('Erro ao processar arquivo SPED:', error);
+      throw error;
+    }
+  }
 
-      const unitValue = value / quantity;
-      const difference = pmpfValue - unitValue;
-      const refundAmount = difference > 0 ? difference * quantity * FUEL_TYPES[fuelAnpCode].icmsRate : 0;
+  async formatRecords() {
+    const formattedRecords = [];
+    
+    for (const record of this.records) {
+      const fuelType = FUEL_TYPES[record.anpCode];
+      if (!fuelType) continue;
 
-      results.push({
-        fuelType: FUEL_TYPES[fuelAnpCode].name,
-        period: this.extractPeriodFromRecord(fields),
-        quantity,
-        value,
-        pmpf: pmpfValue,
-        icmsRate: FUEL_TYPES[fuelAnpCode].icmsRate,
-        refundAmount
+      formattedRecords.push({
+        fuelType: fuelType.name,
+        referenceMonth: this.currentDate ? 
+          this.currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) :
+          'N/A',
+        pmpfValue: record.pmpfValue,
+        quantity: record.quantity,
+        totalSaleValue: record.totalValue,
+        unitSaleValue: record.unitValue,
+        difference: record.difference,
+        refund: record.refundValue
       });
     }
 
-    console.log(`Cálculo finalizado: ${results.length} resultados gerados`);
-    return results;
+    return formattedRecords;
   }
 
-  async getPmpfValue(fuelAnpCode) {
-    // Buscar o tipo de combustível
-    const fuelType = await prisma.fuelType.findFirst({
-      where: { anpCode: fuelAnpCode }
-    });
+  parseLine(line) {
+    const fields = line.split('|');
+    if (fields.length < 2) return null;
 
-    if (!fuelType) {
-      return null;
+    return {
+      type: fields[1],
+      fields: fields.slice(2)
+    };
+  }
+
+  async processProductCode(record) {
+    if (record.type === '0200') {
+      const productCode = record.fields[0];
+      this.currentProductCode = productCode;
+      console.log(`Processando código de produto: ${productCode}`);
+    } else if (record.type === '0206' && this.currentProductCode) {
+      const anpCode = record.fields[0];
+      this.productCodes.set(this.currentProductCode, anpCode);
+      console.log(`Mapeado código de produto ${this.currentProductCode} para código ANP ${anpCode}`);
     }
-
-    // Buscar o valor PMPF mais recente para o tipo de combustível
-    const pmpfValue = await prisma.pmpfValue.findFirst({
-      where: {
-        fuelTypeId: fuelType.id,
-        startDate: { lte: new Date() },
-        endDate: { gte: new Date() }
-      },
-      orderBy: { startDate: 'desc' }
-    });
-
-    return pmpfValue ? pmpfValue.value : null;
   }
 
-  extractPeriodFromRecord(fields) {
-    // Implementar a extração do período do registro SPED
-    // Por enquanto, retornando a data atual
-    return new Date().toISOString().split('T')[0];
+  async process0000(record) {
+    try {
+      // Formato da data no SPED: DDMMAAAA
+      const initialDateStr = record.fields[4];
+      const finalDateStr = record.fields[5];
+      
+      this.initialDate = new Date(
+        parseInt(initialDateStr.substring(4, 8)),
+        parseInt(initialDateStr.substring(2, 4)) - 1,
+        parseInt(initialDateStr.substring(0, 2))
+      );
+      
+      this.finalDate = new Date(
+        parseInt(finalDateStr.substring(4, 8)),
+        parseInt(finalDateStr.substring(2, 4)) - 1,
+        parseInt(finalDateStr.substring(0, 2))
+      );
+      
+      console.log(`Período do arquivo: ${this.initialDate.toLocaleDateString()} a ${this.finalDate.toLocaleDateString()}`);
+    } catch (error) {
+      console.error('Erro ao processar datas do registro 0000:', error);
+    }
+  }
+
+  async processC405(record) {
+    try {
+      this.totalValue = parseFloat(record.fields[4].replace(',', '.'));
+      const dateStr = record.fields[1];
+      
+      this.currentDate = new Date(
+        parseInt(dateStr.substring(4, 8)),
+        parseInt(dateStr.substring(2, 4)) - 1,
+        parseInt(dateStr.substring(0, 2))
+      );
+      
+      console.log(`Data atual: ${this.currentDate.toLocaleDateString()}`);
+    } catch (error) {
+      console.error('Erro ao processar registro C405:', error);
+    }
+  }
+
+  async processC425(record) {
+    try {
+      const productCode = record.fields[0];
+      const anpCode = this.productCodes.get(productCode);
+      
+      if (!anpCode) {
+        console.log(`Código ANP não encontrado para o código de produto: ${productCode}`);
+        return;
+      }
+
+      const fuelType = FUEL_TYPES[anpCode];
+      if (!fuelType) {
+        console.log(`Tipo de combustível não encontrado para o código ANP: ${anpCode}`);
+        return;
+      }
+
+      const quantity = parseFloat(record.fields[1].replace(',', '.'));
+      const totalValue = parseFloat(record.fields[3].replace(',', '.'));
+      const unitValue = totalValue / quantity;
+
+      // Usando valores PMPF de exemplo
+      const pmpfValue = PMPF_VALUES[anpCode] || 0;
+      if (!pmpfValue) {
+        console.log(`Valor PMPF não encontrado para o tipo ${fuelType.name}`);
+        return;
+      }
+
+      const difference = pmpfValue - unitValue;
+      const refundValue = difference * quantity * fuelType.icmsRate;
+
+      this.records.push({
+        anpCode,
+        quantity,
+        unitValue,
+        totalValue,
+        pmpfValue,
+        difference,
+        refundValue,
+        date: this.currentDate
+      });
+
+      console.log(`Processado registro C425: ${fuelType.name} - Quantidade: ${quantity}, Valor Unitário: ${unitValue}, PMPF: ${pmpfValue}, Diferença: ${difference}, Ressarcimento: ${refundValue}`);
+    } catch (error) {
+      console.error('Erro ao processar registro C425:', error);
+    }
+  }
+
+  async calculateRefunds() {
+    let totalRefund = 0;
+    
+    for (const record of this.records) {
+      const fuelType = FUEL_TYPES[record.anpCode];
+      if (!fuelType) continue;
+
+      totalRefund += record.refundValue;
+      
+      console.log(`Ressarcimento calculado para ${fuelType.name}: R$ ${record.refundValue.toFixed(2)}`);
+    }
+    
+    console.log(`Total de ressarcimento: R$ ${totalRefund.toFixed(2)}`);
+    return totalRefund;
   }
 }
 

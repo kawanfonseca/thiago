@@ -1,17 +1,35 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const { PrismaClient } = require('@prisma/client');
 const SpedProcessor = require('./spedProcessor');
+const authRoutes = require('./routes/auth');
+const spedRoutes = require('./routes/sped');
+const pmpfRoutes = require('./routes/pmpf');
+const authMiddleware = require('./middleware/authMiddleware');
 
 const app = express();
 const prisma = new PrismaClient();
 const upload = multer();
+const PORT = process.env.PORT || 3001;
 
+// Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Rota para upload de arquivo SPED
+// Rotas públicas
+app.use('/api/auth', authRoutes);
+
+// Middleware de autenticação para rotas protegidas
+// Comentando temporariamente para facilitar o desenvolvimento
+// app.use('/api', authMiddleware);
+
+// Rotas protegidas
+app.use('/api/sped', spedRoutes);
+app.use('/api/pmpf', pmpfRoutes);
+
+// Rota para upload de arquivo SPED (mantida para compatibilidade)
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -90,46 +108,19 @@ app.get('/api/pmpf-values', async (req, res) => {
 // Rota para cadastrar valor PMPF
 app.post('/api/pmpf-values', async (req, res) => {
   try {
-    const { fuelTypeId, value, startDate, endDate } = req.body;
+    const { fuelTypeId, startDate, endDate, value } = req.body;
     
-    if (!fuelTypeId || typeof value !== 'number' || !startDate || !endDate) {
+    if (!fuelTypeId || !startDate || !endDate || typeof value !== 'number') {
       return res.status(400).json({ error: 'Dados inválidos' });
-    }
-
-    // Validar se o tipo de combustível existe
-    const fuelType = await prisma.fuelType.findUnique({
-      where: { id: fuelTypeId }
-    });
-
-    if (!fuelType) {
-      return res.status(404).json({ error: 'Tipo de combustível não encontrado' });
-    }
-
-    // Validar se já existe um valor PMPF para o período
-    const existingValue = await prisma.pmpfValue.findFirst({
-      where: {
-        fuelTypeId,
-        OR: [
-          {
-            startDate: { lte: new Date(endDate) },
-            endDate: { gte: new Date(startDate) }
-          }
-        ]
-      }
-    });
-
-    if (existingValue) {
-      return res.status(400).json({ error: 'Já existe um valor PMPF cadastrado para este período' });
     }
 
     const pmpfValue = await prisma.pmpfValue.create({
       data: {
-        fuelTypeId,
-        value,
+        fuelTypeId: parseInt(fuelTypeId),
         startDate: new Date(startDate),
-        endDate: new Date(endDate)
-      },
-      include: { fuelType: true }
+        endDate: new Date(endDate),
+        value
+      }
     });
 
     res.json(pmpfValue);
@@ -139,7 +130,24 @@ app.post('/api/pmpf-values', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-}); 
+// Rota para verificar o status do servidor
+app.get('/api/status', (req, res) => {
+  res.json({ status: 'ok', message: 'API funcionando corretamente' });
+});
+
+// Iniciar o servidor
+const startServer = async () => {
+  try {
+    await prisma.$connect();
+    console.log('Conectado ao banco de dados');
+    
+    app.listen(PORT, () => {
+      console.log(`Servidor rodando na porta ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Erro ao iniciar o servidor:', error);
+    process.exit(1);
+  }
+};
+
+startServer(); 
