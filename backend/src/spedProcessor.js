@@ -41,6 +41,7 @@ class SpedProcessor {
     this.productCodes = new Map();
     this.currentDate = null;
     this.currentProductCode = null;
+    this.referenceMonth = null;
   }
 
   async processFile(fileContent, fileName) {
@@ -51,20 +52,26 @@ class SpedProcessor {
       console.log(`Total de linhas no arquivo: ${lines.length}`);
       
       // Primeiro passo: processar registros 0000 para obter o período
+      console.log('\nBuscando registro 0000...');
       for (const line of lines) {
         if (!line.trim()) continue;
         
         const record = this.parseLine(line);
-        if (!record) continue;
+        if (!record) {
+          console.log('Linha inválida:', line);
+          continue;
+        }
         
+        console.log(`Tipo de registro encontrado: ${record.type}`);
         if (record.type === '0000') {
+          console.log('Registro 0000 encontrado:', line);
           await this.process0000(record);
           break;
         }
       }
       
       // Segundo passo: processar registros 0200 e 0206 para mapear códigos de produtos
-      console.log('Processando registros 0200 e 0206...');
+      console.log('\nProcessando registros 0200 e 0206...');
       for (const line of lines) {
         if (!line.trim()) continue;
         
@@ -76,10 +83,10 @@ class SpedProcessor {
         }
       }
       
-      console.log(`Mapeamento de códigos de produtos: ${JSON.stringify(Array.from(this.productCodes.entries()))}`);
+      console.log(`\nMapeamento de códigos de produtos: ${JSON.stringify(Array.from(this.productCodes.entries()))}`);
       
       // Terceiro passo: processar os registros C405 e C425
-      console.log('Processando registros C405 e C425...');
+      console.log('\nProcessando registros C405 e C425...');
       for (const line of lines) {
         if (!line.trim()) continue;
         
@@ -93,11 +100,11 @@ class SpedProcessor {
         }
       }
       
-      console.log(`Total de registros processados: ${this.records.length}`);
+      console.log(`\nTotal de registros processados: ${this.records.length}`);
       
       await this.calculateRefunds();
       
-      console.log('Processamento do arquivo SPED concluído com sucesso');
+      console.log('\nProcessamento do arquivo SPED concluído com sucesso');
       
       // Formatar o resultado para o frontend
       const formattedRecords = await this.formatRecords();
@@ -111,7 +118,8 @@ class SpedProcessor {
         details: formattedRecords
       };
     } catch (error) {
-      console.error('Erro ao processar arquivo SPED:', error);
+      console.error('\nErro ao processar arquivo SPED:', error);
+      console.error('Stack trace:', error.stack);
       throw error;
     }
   }
@@ -119,15 +127,26 @@ class SpedProcessor {
   async formatRecords() {
     const formattedRecords = [];
     
+    // Formata o mês de referência como MM/YYYY
+    const referenceMonthStr = this.referenceMonth instanceof Date
+        ? `${String(this.referenceMonth.getMonth() + 1).padStart(2, '0')}/${this.referenceMonth.getFullYear()}`
+        : 'N/A';
+
     for (const record of this.records) {
       const fuelType = FUEL_TYPES[record.anpCode];
       if (!fuelType) continue;
-
+      
+      console.log(`- Registro para ${fuelType.name}:`);
+      console.log(`  * Mês de referência: ${referenceMonthStr}`);
+      console.log(`  * Quantidade: ${record.quantity}`);
+      console.log(`  * Valor unitário: ${record.unitValue}`);
+      console.log(`  * PMPF: ${record.pmpfValue}`);
+      console.log(`  * Diferença: ${record.difference}`);
+      console.log(`  * Ressarcimento: ${record.refundValue}`);
+      
       formattedRecords.push({
         fuelType: fuelType.name,
-        referenceMonth: this.currentDate ? 
-          this.currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) :
-          'N/A',
+        referenceMonth: referenceMonthStr,
         pmpfValue: record.pmpfValue,
         quantity: record.quantity,
         totalSaleValue: record.totalValue,
@@ -141,13 +160,24 @@ class SpedProcessor {
   }
 
   parseLine(line) {
-    const fields = line.split('|');
-    if (fields.length < 2) return null;
+    console.log('\nProcessando linha:', line);
+    
+    // Remove campos vazios no início da linha
+    const fields = line.split('|').filter(field => field.trim() !== '');
+    console.log('Campos após split e filter:', fields);
+    
+    if (fields.length < 1) {
+      console.log('Linha inválida - campos insuficientes');
+      return null;
+    }
 
-    return {
-      type: fields[1],
-      fields: fields.slice(2)
+    const result = {
+      type: fields[0],
+      fields: fields.slice(1)
     };
+    
+    console.log('Resultado do parse:', result);
+    return result;
   }
 
   async processProductCode(record) {
@@ -163,33 +193,71 @@ class SpedProcessor {
   }
 
   async process0000(record) {
+    console.log('Processando registro 0000:', record);
+    const fields = record.fields;
+    
+    // Verifica se há campos suficientes
+    if (fields.length < 4) {
+        console.error('Registro 0000 inválido: campos insuficientes');
+        return;
+    }
+
+    // Extrai as datas dos campos corretos (índices 2 e 3)
+    const initialDateStr = fields[2];
+    const finalDateStr = fields[3];
+
+    console.log('Datas encontradas:', { initialDateStr, finalDateStr });
+
+    // Verifica se as strings de data são válidas
+    if (!initialDateStr || initialDateStr.length !== 8 || !finalDateStr || finalDateStr.length !== 8) {
+        console.error('Registro 0000 inválido: formato de data inválido');
+        return;
+    }
+
     try {
-      // Formato da data no SPED: DDMMAAAA
-      const initialDateStr = record.fields[4];
-      const finalDateStr = record.fields[5];
-      
-      this.initialDate = new Date(
-        parseInt(initialDateStr.substring(4, 8)),
-        parseInt(initialDateStr.substring(2, 4)) - 1,
-        parseInt(initialDateStr.substring(0, 2))
-      );
-      
-      this.finalDate = new Date(
-        parseInt(finalDateStr.substring(4, 8)),
-        parseInt(finalDateStr.substring(2, 4)) - 1,
-        parseInt(finalDateStr.substring(0, 2))
-      );
-      
-      console.log(`Período do arquivo: ${this.initialDate.toLocaleDateString()} a ${this.finalDate.toLocaleDateString()}`);
+        // Converte as strings de data para objetos Date
+        const initialDate = new Date(
+            parseInt(initialDateStr.substring(4, 8)), // ano
+            parseInt(initialDateStr.substring(2, 4)) - 1, // mês (0-11)
+            parseInt(initialDateStr.substring(0, 2)) // dia
+        );
+
+        const finalDate = new Date(
+            parseInt(finalDateStr.substring(4, 8)),
+            parseInt(finalDateStr.substring(2, 4)) - 1,
+            parseInt(finalDateStr.substring(0, 2))
+        );
+
+        this.initialDate = initialDate;
+        this.finalDate = finalDate;
+        
+        // Define o mês de referência como o mês da data inicial
+        this.referenceMonth = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
+        
+        console.log('Datas processadas:', {
+            initialDate: initialDate.toISOString(),
+            finalDate: finalDate.toISOString(),
+            referenceMonth: this.referenceMonth.toISOString()
+        });
+
     } catch (error) {
-      console.error('Erro ao processar datas do registro 0000:', error);
+        console.error('Erro ao processar datas do registro 0000:', error);
+        console.error('Detalhes do erro:', error.stack);
     }
   }
 
   async processC405(record) {
     try {
       this.totalValue = parseFloat(record.fields[4].replace(',', '.'));
-      const dateStr = record.fields[1];
+      const dateStr = record.fields[0];
+      
+      console.log(`Processando registro C405 - Data: ${dateStr}`);
+      
+      // Verificar se a string de data tem o formato correto
+      if (dateStr.length !== 8) {
+        console.error(`Formato de data inválido no C405: ${dateStr}`);
+        return;
+      }
       
       this.currentDate = new Date(
         parseInt(dateStr.substring(4, 8)),
@@ -200,6 +268,7 @@ class SpedProcessor {
       console.log(`Data atual: ${this.currentDate.toLocaleDateString()}`);
     } catch (error) {
       console.error('Erro ao processar registro C405:', error);
+      console.error('Stack trace:', error.stack);
     }
   }
 

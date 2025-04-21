@@ -103,7 +103,9 @@ const SpedProcessor: React.FC = () => {
       detail.unitSaleValue.toFixed(2),
       detail.difference.toFixed(2),
       detail.refund.toFixed(2),
-    ]);
+    ]
+  );
+  console.log(data)
 
     const csvContent = [
       headers.join(','),

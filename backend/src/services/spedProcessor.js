@@ -237,7 +237,7 @@ class SpedProcessor {
 
   async process0000Record(fields) {
     // Extrair a data inicial do arquivo
-    const dateStr = fields[4];
+    const dateStr = fields[3];
     this.currentDate = new Date(
       dateStr.substring(4, 8), // ano
       parseInt(dateStr.substring(2, 4)) - 1, // mês (0-11)
